@@ -19,10 +19,10 @@ This fixes that — right from the **right-click menu**.
 
 ![Right-click menu to choose audio output](docs/images/Screenshot.jpg)
 
-- *Requires Audio permission*
-- Right-click any page or video  
-- Choose **Sound Output → Select device**  
-- Done — that tab now plays through a different output
+- *May ask for microphone access* so Chromium can label output devices (`enumerateDevices`).
+- Right-click the **video or audio** element.  
+- Open **Audio outputs → Choose output…** and pick a device in the on-page list, or use **Use system default**.  
+- Done — that player now uses the output you chose.
 
 ---
 
@@ -47,7 +47,7 @@ This fixes that — right from the **right-click menu**.
 
 - Only works on sites using standard `<audio>/<video>`  
 - Some apps (Zoom web, Spotify web) may not route correctly  
-- Chromium browsers only (Chrome, Arc, Brave, Edge)
+- Chromium browsers only (Chrome, Arc, Brave, Edge)  
 
 ---
 
