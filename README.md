@@ -19,6 +19,7 @@ This fixes that — right from the **right-click menu**.
 
 ![Right-click menu to choose audio output](docs/images/Screenshot.jpg)
 
+- *Requires Audio permission*
 - Right-click any page or video  
 - Choose **Sound Output → Select device**  
 - Done — that tab now plays through a different output
