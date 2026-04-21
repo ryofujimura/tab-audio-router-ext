@@ -46,8 +46,8 @@ This fixes that — right from the **right-click menu**.
 ## Limitations (important)
 
 - Only works on sites using standard `<audio>/<video>`  
-- Some apps (Zoom web, Spotify web) may not route correctly  
-- Chromium browsers only (Chrome, Arc, Brave, Edge)
+- Needs to be tested on web apps(Ex: Zoom web, Spotify web)
+- Needs to be tested on browswers (Ex: Chrome, Arc, Brave, Edge)  
 
 ---
 
