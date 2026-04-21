@@ -1,6 +1,7 @@
 # Tab Audio Router
 
 ![Tab Audio Router — Sound Output context menu](Screenshot.jpg)
+(img.jpg)
 
 > Route **this tab’s** `<audio>` / `<video>` to a speaker or headset.  
 > Uses Chromium’s **`setSinkId`** from the right‑click menu.
