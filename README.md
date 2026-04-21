@@ -54,4 +54,13 @@ This fixes that — right from the **right-click menu**.
 
 Early tool. Works well on common sites, not universal yet.
 
+Tested on:
+- [ ] **Chrome** — macOS  
+- [ ] **Chrome** — Windows  
+- [ ] **Edge** — Windows  
+- [ ] **Brave** — macOS  
+- [x] **Arc** — macOS
+      - Version 1.143.2 (79250) Chromium Engine Version 147.0.7727.102  
+- [ ] **Chromium** — Linux
+ 
 ---
