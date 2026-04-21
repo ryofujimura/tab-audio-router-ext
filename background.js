@@ -1,221 +1,66 @@
 /**
- * Tab Audio Router — context menu on video/audio only. Uses activeTab: device listing and
- * setSinkId run only after the user clicks a menu item (chrome.scripting.executeScript).
+ * Tab Audio Router — list audiooutput devices under a context submenu and apply the
+ * choice with HTMLMediaElement.setSinkId() on the element that was right-clicked.
+ * Choosing the default output runs getUserMedia({ audio: true }) first so sites that
+ * never requested mic access still get a permission prompt and labeled devices.
+ *
+ * Chromium limitation: contextMenus has no onShown hook, so the menu is rebuilt on a
+ * timer / focus / contextmenu ping; the first right-click after a change may still show
+ * the previous list until the next open. See refresh triggers below.
  */
 
 const PARENT_ID = 'tab-audio-outputs-parent';
-const MENU_CHOOSE = 'tab-audio-choose-output';
-const MENU_DEFAULT = 'tab-audio-use-default';
+const MAX_OUTPUT_ITEMS = 64;
+const ALARM_NAME = 'refresh-audio-devices';
 
-/**
- * Injected into the page when the user chooses "Choose output…". Must stay self-contained
- * (serialized for executeScript).
- * @param {string} src
- * @param {'audio' | 'video'} type
- */
-async function runAudioOutputPicker(src, type) {
-  function pickMedia() {
-    const tag = type === 'audio' ? 'audio' : 'video';
-    const list = Array.from(document.querySelectorAll(tag));
-    if (list.length === 0) return null;
-    if (src) {
-      const hit = list.find((el) => {
-        try {
-          return (
-            el.src === src ||
-            el.currentSrc === src ||
-            el.getAttribute('src') === src
-          );
-        } catch {
-          return false;
-        }
-      });
-      if (hit) return hit;
-    }
-    return list[0];
-  }
-
-  const el = pickMedia();
-  if (!el) {
-    window.alert('Tab Audio Router: No matching media element found.');
-    return;
-  }
-  if (typeof el.setSinkId !== 'function') {
-    window.alert('Tab Audio Router: setSinkId is not available here.');
-    return;
-  }
-
-  async function outputsWithLabels() {
-    let list = (await navigator.mediaDevices.enumerateDevices()).filter(
-      (d) => d.kind === 'audiooutput',
-    );
-    const needsLabels = list.some((d) => !d.label);
-    if (needsLabels) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        stream.getTracks().forEach((t) => t.stop());
-      } catch {
-        /* labels may still be empty */
-      }
-      list = (await navigator.mediaDevices.enumerateDevices()).filter(
-        (d) => d.kind === 'audiooutput',
-      );
-    }
-    return list;
-  }
-
-  const outputs = await outputsWithLabels();
-  if (outputs.length === 0) {
-    window.alert('Tab Audio Router: No audio output devices found.');
-    return;
-  }
-
-  const prev = document.getElementById('tab-audio-router-picker-root');
-  if (prev) prev.remove();
-
-  const root = document.createElement('div');
-  root.id = 'tab-audio-router-picker-root';
-  root.setAttribute(
-    'style',
-    'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;',
-  );
-
-  const panel = document.createElement('div');
-  panel.setAttribute(
-    'style',
-    'background:#1e1e1e;color:#eee;padding:16px 20px;border-radius:12px;max-width:90vw;max-height:70vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.4);',
-  );
-
-  const title = document.createElement('div');
-  title.textContent = 'Choose audio output';
-  title.setAttribute(
-    'style',
-    'font-weight:600;margin-bottom:12px;font-size:15px;',
-  );
-  panel.appendChild(title);
-
-  const hint = document.createElement('div');
-  hint.textContent = 'Applies to this player only.';
-  hint.setAttribute(
-    'style',
-    'font-size:12px;opacity:.75;margin-bottom:14px;',
-  );
-  panel.appendChild(hint);
-
-  function close() {
-    document.removeEventListener('keydown', onKey, true);
-    root.remove();
-  }
-
-  function onKey(/** @type {KeyboardEvent} */ e) {
-    if (e.key === 'Escape') close();
-  }
-  document.addEventListener('keydown', onKey, true);
-
-  root.addEventListener('click', (e) => {
-    if (e.target === root) close();
-  });
-
-  /**
-   * @param {string} labelText
-   * @param {string} sinkId
-   * @param {boolean} isDefault
-   */
-  function addRow(labelText, sinkId, isDefault) {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.textContent = labelText;
-    row.setAttribute(
-      'style',
-      'display:block;width:100%;text-align:left;padding:10px 12px;margin:4px 0;border:none;border-radius:8px;background:#2d2d2d;color:#eee;cursor:pointer;font-size:14px;',
-    );
-    row.addEventListener('mouseenter', () => {
-      row.style.background = '#3d3d3d';
-    });
-    row.addEventListener('mouseleave', () => {
-      row.style.background = '#2d2d2d';
-    });
-    row.addEventListener('click', async () => {
-      try {
-        if (isDefault) {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              audio: true,
-            });
-            stream.getTracks().forEach((t) => t.stop());
-          } catch {
-            /* still try setSinkId */
-          }
-        }
-        await el.setSinkId(sinkId);
-        close();
-      } catch (err) {
-        window.alert(
-          'Tab Audio Router: ' +
-            (err instanceof Error ? err.message : String(err)),
-        );
-      }
-    });
-    panel.appendChild(row);
-  }
-
-  addRow('Default (system)', '', true);
-  outputs.forEach((d) => {
-    const lab = d.label?.trim() || d.deviceId || 'Unknown';
-    addRow(lab, d.deviceId, false);
-  });
-
-  const cancel = document.createElement('button');
-  cancel.type = 'button';
-  cancel.textContent = 'Cancel';
-  cancel.setAttribute(
-    'style',
-    'margin-top:14px;padding:8px 14px;border-radius:8px;border:1px solid #555;background:transparent;color:#aaa;cursor:pointer;font-size:13px;',
-  );
-  cancel.addEventListener('click', close);
-  panel.appendChild(cancel);
-
-  root.appendChild(panel);
-  document.documentElement.appendChild(root);
-}
+/** @type {Map<string, string>} menuItemId -> deviceId */
+const deviceIdByMenuId = new Map();
 
 chrome.runtime.onInstalled.addListener(() => {
-  void createStaticMenus();
+  chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
+  scheduleRefreshActiveTab();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  scheduleRefreshActiveTab();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_NAME) {
+    scheduleRefreshActiveTab();
+  }
+});
+
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  refreshMenuForTab(activeInfo.tabId);
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  chrome.tabs.query({ active: true, windowId }).then((tabs) => {
+    const id = tabs[0]?.id;
+    if (id != null) refreshMenuForTab(id);
+  });
+});
+
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type === 'TRIGGER_MENU_REFRESH' && sender.tab?.id != null) {
+    refreshMenuForTab(sender.tab.id);
+  }
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (tab?.id == null) return;
   const id = String(info.menuItemId);
-  if (id === MENU_CHOOSE) {
-    void openOutputPicker(tab.id, info);
-    return;
-  }
-  if (id === MENU_DEFAULT) {
-    void applySinkIdToContextMenuTarget(tab.id, info, '');
-  }
+  const deviceId = deviceIdByMenuId.get(id);
+  if (deviceId == null || tab?.id == null) return;
+  void applySinkIdToContextMenuTarget(tab.id, info, deviceId);
 });
 
 /**
  * @param {number} tabId
  * @param {chrome.contextMenus.OnClickData} info
+ * @param {string} deviceId
  */
-async function openOutputPicker(tabId, info) {
-  const frameId = info.frameId ?? 0;
-  const srcUrl = info.srcUrl || '';
-  const mediaType = info.mediaType === 'audio' ? 'audio' : 'video';
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId, frameIds: [frameId] },
-      func: runAudioOutputPicker,
-      args: [srcUrl, mediaType],
-    });
-  } catch (e) {
-    console.warn('[Tab Audio Router] picker inject failed:', e);
-  }
-}
-
 /**
  * @param {string} id
  */
@@ -224,11 +69,6 @@ function isDefaultSinkId(id) {
   return s === '' || s === 'default';
 }
 
-/**
- * @param {number} tabId
- * @param {chrome.contextMenus.OnClickData} info
- * @param {string} deviceId
- */
 async function applySinkIdToContextMenuTarget(tabId, info, deviceId) {
   const frameId = info.frameId ?? 0;
   const srcUrl = info.srcUrl || '';
@@ -304,7 +144,88 @@ async function applySinkIdToContextMenuTarget(tabId, info, deviceId) {
   }
 }
 
-async function createStaticMenus() {
+function scheduleRefreshActiveTab() {
+  chrome.windows.getLastFocused({ populate: true }).then((win) => {
+    const tab = win.tabs?.find((t) => t.active);
+    if (tab?.id != null) refreshMenuForTab(tab.id);
+  }).catch(() => {});
+}
+
+/**
+ * @param {string} url
+ */
+function canInject(url) {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  return (
+    u.startsWith('http://') ||
+    u.startsWith('https://') ||
+    u.startsWith('file://')
+  );
+}
+
+/**
+ * @param {string} title
+ */
+function truncateTitle(title) {
+  const t = title.trim();
+  if (t.length <= 60) return t;
+  return `${t.slice(0, 57)}...`;
+}
+
+/**
+ * @param {{ deviceId: string, label: string, groupId: string }[]} outputs
+ */
+function deviceTitle(d) {
+  const label = d.label?.trim();
+  if (label) return truncateTitle(label);
+  const id = d.deviceId || '';
+  if (!id || id === 'default') return 'Default';
+  return truncateTitle(id.length > 24 ? `${id.slice(0, 21)}...` : id);
+}
+
+async function refreshMenuForTab(tabId) {
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    await rebuildMenuError('Tab unavailable');
+    return;
+  }
+
+  if (!canInject(tab.url || '')) {
+    await rebuildMenuError('Not available on this page');
+    return;
+  }
+
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async () => {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        return list
+          .filter((d) => d.kind === 'audiooutput')
+          .map((d) => ({
+            deviceId: d.deviceId,
+            label: d.label || '',
+            groupId: d.groupId || '',
+          }));
+      },
+    });
+    const outputs = res?.result;
+    if (!Array.isArray(outputs)) {
+      await rebuildMenuError('No device list');
+      return;
+    }
+    await rebuildMenuOutputs(outputs);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await rebuildMenuError(msg);
+  }
+}
+
+async function rebuildMenuOutputs(outputs) {
+  deviceIdByMenuId.clear();
   await chrome.contextMenus.removeAll();
 
   chrome.contextMenus.create({
@@ -313,17 +234,44 @@ async function createStaticMenus() {
     contexts: ['video', 'audio'],
   });
 
-  chrome.contextMenus.create({
-    id: MENU_CHOOSE,
-    parentId: PARENT_ID,
-    title: 'Choose output…',
-    contexts: ['video', 'audio'],
+  const slice = outputs.slice(0, MAX_OUTPUT_ITEMS);
+  if (slice.length === 0) {
+    chrome.contextMenus.create({
+      id: 'tab-audio-no-devices',
+      parentId: PARENT_ID,
+      title: 'No output devices found',
+      enabled: false,
+      contexts: ['video', 'audio'],
+    });
+    return;
+  }
+
+  slice.forEach((d, i) => {
+    const menuId = `tab-audio-out-${i}`;
+    deviceIdByMenuId.set(menuId, d.deviceId);
+    chrome.contextMenus.create({
+      id: menuId,
+      parentId: PARENT_ID,
+      title: deviceTitle(d),
+      contexts: ['video', 'audio'],
+    });
   });
+}
+
+async function rebuildMenuError(message) {
+  deviceIdByMenuId.clear();
+  await chrome.contextMenus.removeAll();
 
   chrome.contextMenus.create({
-    id: MENU_DEFAULT,
+    id: PARENT_ID,
+    title: 'Audio outputs',
+    contexts: ['video', 'audio'],
+  });
+  chrome.contextMenus.create({
+    id: 'tab-audio-error',
     parentId: PARENT_ID,
-    title: 'Use system default',
+    title: truncateTitle(`Could not list devices (${message})`),
+    enabled: false,
     contexts: ['video', 'audio'],
   });
 }
