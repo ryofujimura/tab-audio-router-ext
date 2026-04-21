@@ -19,7 +19,7 @@ This fixes that — right from the **right-click menu**.
 
 ![Right-click menu to choose audio output](docs/images/Screenshot.jpg)
 
-- *May ask for microphone access* so Chromium can label output devices (`enumerateDevices`).
+- *May ask for microphone access* so Chromium can label output devices.
 - Right-click the **video or audio** element.  
 - Open **Audio outputs → Choose output…** and pick a device in the on-page list, or use **Use system default**.  
 - Done — that player now uses the output you chose.
@@ -46,8 +46,8 @@ This fixes that — right from the **right-click menu**.
 ## Limitations (important)
 
 - Only works on sites using standard `<audio>/<video>`  
-- Some apps (Zoom web, Spotify web) may not route correctly  
-- Chromium browsers only (Chrome, Arc, Brave, Edge)  
+- Needs to be tested on web apps(Ex: Zoom web, Spotify web)
+- Needs to be tested on browswers (Ex: Chrome, Arc, Brave, Edge)  
 
 ---
 
