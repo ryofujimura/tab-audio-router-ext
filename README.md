@@ -1,79 +1,57 @@
 # Tab Audio Router
 
-![Tab Audio Router — tab audio to different outputs](docs/images/img.jpg)
+![Route different tabs to different outputs](docs/images/img.jpg)
 
-> Route **this tab’s** `<audio>` / `<video>` to a speaker or headset.  
-> Uses Chromium’s **`setSinkId`** from the right‑click menu.
-
----
-
-## What it does
-
-- Picks an **output device** for media on the page you’re on.
-- Lives in the **context menu** — no clutter in the toolbar.
-- **Chromium only** (Chrome, Edge, Brave, Arc, etc.). Not Firefox.
+> Send **each browser tab’s audio to a different device** on Mac.  
+> Example: YouTube → TV, Zoom → Headphones.
 
 ---
 
-## Quick look
+## Why this exists
 
-```
-    ┌──────────────┐         ┌─────────────────┐
-    │   Browser    │  sink   │   🔊 Speakers   │
-    │   tab media  │ ──────► │   🎧 Headset    │
-    └──────────────┘         └─────────────────┘
-           │
-           └── Sound Output ▸ Choose output…
-```
+macOS + browsers don’t let you easily control audio **per tab**.
+
+This fixes that — right from the **right-click menu**.
 
 ---
 
-## Install (3 steps)
+## How it works
 
-1. **Get the folder**  
-   - Clone this repo, or unzip the project so you have the extension root on disk.
+![Right-click menu to choose audio output](docs/images/Screenshot.jpg)
 
-2. **Open extensions**  
-   - Go to `chrome://extensions`  
-   - Turn **Developer mode** **ON** (top right).
-
-3. **Load unpacked**  
-   - Click **Load unpacked**  
-   - Select the **project folder** (the one that contains `manifest.json`).
-
-Done. Pin the extension if you like — routing is from **right‑click** on the page or media.
+- Right-click any page or video  
+- Choose **Sound Output → Select device**  
+- Done — that tab now plays through a different output
 
 ---
 
-## How to use
+## What you can do
 
-- Right‑click the **page** or a **video / audio** element.
-- Open **Sound Output** → **Choose output…** (or **Use system default**).
-- Grant **microphone** if the browser asks — Chromium uses it to unlock the full device list. Then pick your output.
-
-![Tab Audio Router — Audio outputs menu on a video](docs/images/Screenshot.jpg)
+- 🎧 Zoom in headphones, music on speakers  
+- 📺 Send a tab to your TV while working on laptop audio  
+- 🔀 Run multiple tabs with different outputs
 
 ---
 
-## Notes
+## Install (30 seconds)
 
-- Some sites block or sandbox media; routing may not apply everywhere.
-- Version and permissions live in `manifest.json`.
-
----
-
-## Tested on
-
-Tick what you have verified:
-
-- [ ] **Chrome** — macOS  
-- [ ] **Chrome** — Windows  
-- [ ] **Edge** — Windows  
-- [ ] **Brave** — macOS  
-- [x] **Arc** — macOS
-      - Version 1.143.2 (79250) Chromium Engine Version 147.0.7727.102  
-- [ ] **Chromium** — Linux  
+1. Download / clone this repo  
+2. Go to `chrome://extensions`  
+3. Enable **Developer Mode**  
+4. Click **Load unpacked** → select this folder  
 
 ---
 
-*Unofficial helper. Not affiliated with Google or browser vendors.*
+## Limitations (important)
+
+- Only works on sites using standard `<audio>/<video>`  
+- Some apps (Zoom web, Spotify web) may not route correctly  
+- Chromium browsers only (Chrome, Arc, Brave, Edge)
+
+---
+
+## Status
+
+Early tool. Works well on common sites, not universal yet.
+
+---
