@@ -1,7 +1,5 @@
 # Tab Audio Router
 
-![Tab Audio Router — Sound Output context menu](Screenshot.jpg)
-
 ![Tab Audio Router — tab audio to different outputs](img.jpg)
 
 > Route **this tab’s** `<audio>` / `<video>` to a speaker or headset.  
@@ -52,6 +50,8 @@ Done. Pin the extension if you like — routing is from **right‑click** on the
 - Right‑click the **page** or a **video / audio** element.
 - Open **Sound Output** → **Choose output…** (or **Use system default**).
 - Grant **microphone** if the browser asks — Chromium uses it to unlock the full device list. Then pick your output.
+
+![Tab Audio Router — Audio outputs menu on a video](Screenshot.jpg)
 
 ---
 
