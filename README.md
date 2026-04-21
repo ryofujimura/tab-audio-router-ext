@@ -58,4 +58,18 @@ Done. Pin the extension if you like — routing is from **right‑click** on the
 
 ---
 
+## Tested on
+
+Tick what you have verified:
+
+- [ ] **Chrome** — macOS  
+- [ ] **Chrome** — Windows  
+- [ ] **Edge** — Windows  
+- [ ] **Brave** — macOS  
+- [x] **Arc** — macOS
+      - Version 1.143.2 (79250) Chromium Engine Version 147.0.7727.102  
+- [ ] **Chromium** — Linux  
+
+---
+
 *Unofficial helper. Not affiliated with Google or browser vendors.*
