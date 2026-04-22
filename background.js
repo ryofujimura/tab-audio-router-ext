@@ -1,8 +1,9 @@
 /**
  * Tab Audio Router — list audiooutput devices under a context submenu and apply the
  * choice with HTMLMediaElement.setSinkId() on the element that was right-clicked.
- * Choosing the default output runs getUserMedia({ audio: true }) first so sites that
- * never requested mic access still get a permission prompt and labeled devices.
+ * Before listing or setting outputs, the tab runs getUserMedia({ audio: true }) (then
+ * stops tracks) so deviceIds match the fully resolved list; on macOS this keeps the
+ * built-in output distinct from 3.5mm when the OS default is the jack.
  *
  * Chromium limitation: contextMenus has no onShown hook, so the menu is rebuilt on a
  * timer / focus / contextmenu ping; the first right-click after a change may still show
@@ -86,24 +87,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
  * @param {chrome.contextMenus.OnClickData} info
  * @param {string} deviceId
  */
-/**
- * @param {string} id
- */
-function isDefaultSinkId(id) {
-  const s = (id ?? '').trim();
-  return s === '' || s === 'default';
-}
-
 async function applySinkIdToContextMenuTarget(tabId, info, deviceId) {
   const frameId = info.frameId ?? 0;
   const srcUrl = info.srcUrl || '';
   const mediaType = info.mediaType === 'audio' ? 'audio' : 'video';
-  const primeMic = isDefaultSinkId(deviceId);
 
   try {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId, frameIds: [frameId] },
-      func: async (src, type, sinkId, shouldPrimeMic) => {
+      func: async (src, type, sinkId) => {
         function pickMedia() {
           const tag = type === 'audio' ? 'audio' : 'video';
           const list = Array.from(document.querySelectorAll(tag));
@@ -136,15 +128,15 @@ async function applySinkIdToContextMenuTarget(tabId, info, deviceId) {
           };
         }
         try {
-          if (shouldPrimeMic) {
-            try {
-              const stream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
-              });
-              stream.getTracks().forEach((t) => t.stop());
-            } catch {
-              /* denied or blocked — still try setSinkId */
-            }
+          // Prime permission so output deviceId matches a fully resolved list; required
+          // to distinguish built-in output vs 3.5mm default on macOS.
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+            });
+            stream.getTracks().forEach((t) => t.stop());
+          } catch {
+            /* denied or blocked — still try setSinkId */
           }
           await el.setSinkId(sinkId);
           return { ok: true };
@@ -155,7 +147,7 @@ async function applySinkIdToContextMenuTarget(tabId, info, deviceId) {
           };
         }
       },
-      args: [srcUrl, mediaType, deviceId, primeMic],
+      args: [srcUrl, mediaType, deviceId],
     });
 
     const result = res?.result;
@@ -178,17 +170,26 @@ async function applyAudioForTab(tabId, deviceId, volume) {
   const normalizedVolume = Number.isFinite(volume)
     ? Math.max(0, Math.min(1, volume))
     : DEFAULT_VOLUME;
-  const primeMic = isDefaultSinkId(deviceId);
 
   const [res] = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
-    func: async (sinkId, vol, shouldPrimeMic) => {
+    func: async (sinkId, vol) => {
       if (typeof navigator.mediaDevices?.enumerateDevices !== 'function') {
         return {
           ok: false,
           updatedCount: 0,
           error: 'Device enumeration is not available on this page',
         };
+      }
+
+      // Match enumerateDevices to the same resolution Chrome uses for setSinkId, so
+      // explicit output ids (e.g. built-in speakers) are not confused with the system
+      // default when 3.5mm headphones are the OS default.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch {
+        /* still try enumerate + setSinkId */
       }
 
       const outputs = (await navigator.mediaDevices.enumerateDevices()).filter(
@@ -213,15 +214,6 @@ async function applyAudioForTab(tabId, deviceId, volume) {
         };
       }
 
-      if (shouldPrimeMic) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach((t) => t.stop());
-        } catch {
-          /* denied or blocked */
-        }
-      }
-
       let updatedCount = 0;
       /** @type {string[]} */
       const errors = [];
@@ -243,7 +235,7 @@ async function applyAudioForTab(tabId, deviceId, volume) {
         error: errors[0] || null,
       };
     },
-    args: [deviceId, normalizedVolume, primeMic],
+    args: [deviceId, normalizedVolume],
   });
 
   return res?.result ?? {
@@ -289,6 +281,12 @@ async function getAudioOutputsForTab(tabId) {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {
+          /* unlabeled or partial list if denied */
+        }
         const list = await navigator.mediaDevices.enumerateDevices();
         return list
           .filter((d) => d.kind === 'audiooutput')
@@ -438,6 +436,12 @@ async function runRefreshMenuForTab(tabId) {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {
+          /* unlabeled or partial list if denied */
+        }
         const list = await navigator.mediaDevices.enumerateDevices();
         return list
           .filter((d) => d.kind === 'audiooutput')
