@@ -12,9 +12,13 @@
 const PARENT_ID = 'tab-audio-outputs-parent';
 const MAX_OUTPUT_ITEMS = 64;
 const ALARM_NAME = 'refresh-audio-devices';
+const DEFAULT_VOLUME = 1;
+const NATIVE_HOST_NAME = 'com.tab_audio_router.host';
 
 /** @type {Map<string, string>} menuItemId -> deviceId */
 const deviceIdByMenuId = new Map();
+/** @type {Map<number, { deviceId: string, volume: number }>} */
+const tabAudioPrefs = new Map();
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
@@ -43,9 +47,30 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((msg, sender) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'TRIGGER_MENU_REFRESH' && sender.tab?.id != null) {
     refreshMenuForTab(sender.tab.id);
+    return;
+  }
+
+  if (msg?.type === 'POPUP_GET_STATE') {
+    void handlePopupGetState().then(sendResponse);
+    return true;
+  }
+
+  if (msg?.type === 'POPUP_SET_TAB_AUDIO') {
+    void handlePopupSetTabAudio(msg).then(sendResponse);
+    return true;
+  }
+
+  if (msg?.type === 'POPUP_GET_SYSTEM_VOLUME') {
+    void handlePopupGetSystemVolume().then(sendResponse);
+    return true;
+  }
+
+  if (msg?.type === 'POPUP_SET_SYSTEM_VOLUME') {
+    void handlePopupSetSystemVolume(msg).then(sendResponse);
+    return true;
   }
 });
 
@@ -144,6 +169,208 @@ async function applySinkIdToContextMenuTarget(tabId, info, deviceId) {
   }
 }
 
+/**
+ * @param {number} tabId
+ * @param {string} deviceId
+ * @param {number} volume
+ */
+async function applyAudioForTab(tabId, deviceId, volume) {
+  const normalizedVolume = Number.isFinite(volume)
+    ? Math.max(0, Math.min(1, volume))
+    : DEFAULT_VOLUME;
+  const primeMic = isDefaultSinkId(deviceId);
+
+  const [res] = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: async (sinkId, vol, shouldPrimeMic) => {
+      if (typeof navigator.mediaDevices?.enumerateDevices !== 'function') {
+        return {
+          ok: false,
+          updatedCount: 0,
+          error: 'Device enumeration is not available on this page',
+        };
+      }
+
+      const outputs = (await navigator.mediaDevices.enumerateDevices()).filter(
+        (d) => d.kind === 'audiooutput'
+      );
+      const sinkExists =
+        sinkId === 'default' || outputs.some((d) => d.deviceId === sinkId);
+      if (!sinkExists) {
+        return {
+          ok: false,
+          updatedCount: 0,
+          error: 'Requested device not found for this tab',
+        };
+      }
+
+      const media = Array.from(document.querySelectorAll('audio,video'));
+      if (media.length === 0) {
+        return {
+          ok: false,
+          updatedCount: 0,
+          error: 'No media elements found in this tab',
+        };
+      }
+
+      if (shouldPrimeMic) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {
+          /* denied or blocked */
+        }
+      }
+
+      let updatedCount = 0;
+      /** @type {string[]} */
+      const errors = [];
+      for (const el of media) {
+        try {
+          if (typeof el.setSinkId === 'function') {
+            await el.setSinkId(sinkId);
+          }
+          el.volume = vol;
+          updatedCount += 1;
+        } catch (e) {
+          errors.push(e instanceof Error ? e.message : String(e));
+        }
+      }
+
+      return {
+        ok: errors.length === 0,
+        updatedCount,
+        error: errors[0] || null,
+      };
+    },
+    args: [deviceId, normalizedVolume, primeMic],
+  });
+
+  return res?.result ?? {
+    ok: false,
+    updatedCount: 0,
+    error: 'No result from tab script',
+  };
+}
+
+async function handlePopupGetState() {
+  const audibleTabs = await chrome.tabs.query({ audible: true, currentWindow: true });
+  const tabs = audibleTabs
+    .filter((tab) => tab.id != null)
+    .map((tab) => {
+      const pref = tabAudioPrefs.get(tab.id);
+      return {
+        id: tab.id,
+        title: truncateTitle(tab.title || 'Untitled tab'),
+        url: tab.url || '',
+        audible: Boolean(tab.audible),
+        deviceId: pref?.deviceId || 'default',
+        volume: pref?.volume ?? DEFAULT_VOLUME,
+      };
+    });
+
+  const outputsByTab = {};
+  await Promise.all(
+    tabs.map(async (tab) => {
+      outputsByTab[String(tab.id)] = await getAudioOutputsForTab(tab.id);
+    })
+  );
+
+  return { ok: true, tabs, outputsByTab };
+}
+
+/**
+ * @param {number | undefined} tabId
+ */
+async function getAudioOutputsForTab(tabId) {
+  if (tabId == null) return [];
+
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async () => {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        return list
+          .filter((d) => d.kind === 'audiooutput')
+          .map((d) => ({
+            deviceId: d.deviceId,
+            label: d.label || '',
+            groupId: d.groupId || '',
+          }));
+      },
+    });
+
+    const outputs = Array.isArray(res?.result) ? res.result : [];
+    return outputs.slice(0, MAX_OUTPUT_ITEMS);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @param {{ tabId?: number, deviceId?: string, volume?: number }} msg
+ */
+async function handlePopupSetTabAudio(msg) {
+  const tabId = msg.tabId;
+  const deviceId = (msg.deviceId || 'default').trim() || 'default';
+  const volume = Number(msg.volume);
+  if (tabId == null || !Number.isInteger(tabId)) {
+    return { ok: false, error: 'Invalid tab id' };
+  }
+
+  const result = await applyAudioForTab(tabId, deviceId, volume);
+  if (result?.ok || result?.updatedCount > 0) {
+    tabAudioPrefs.set(tabId, {
+      deviceId,
+      volume: Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : DEFAULT_VOLUME,
+    });
+  }
+  return result;
+}
+
+async function handlePopupGetSystemVolume() {
+  const res = await callNativeHost({ action: 'getSystemVolume' });
+  if (!res?.ok) {
+    return {
+      ok: false,
+      error: res?.error || 'Native helper unavailable',
+    };
+  }
+  return {
+    ok: true,
+    volume: Number.isFinite(res.volume) ? res.volume : 0,
+  };
+}
+
+/**
+ * @param {{ volume?: number }} msg
+ */
+async function handlePopupSetSystemVolume(msg) {
+  const vol = Number(msg?.volume);
+  const volume = Number.isFinite(vol) ? Math.max(0, Math.min(100, Math.round(vol))) : 0;
+  const res = await callNativeHost({ action: 'setSystemVolume', volume });
+  if (!res?.ok) {
+    return {
+      ok: false,
+      error: res?.error || 'Failed to set system volume',
+    };
+  }
+  return { ok: true, volume };
+}
+
+function callNativeHost(payload) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload, (response) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        resolve({ ok: false, error: err.message || 'Native messaging error' });
+        return;
+      }
+      resolve(response ?? { ok: false, error: 'No response from native host' });
+    });
+  });
+}
+
 function scheduleRefreshActiveTab() {
   chrome.windows.getLastFocused({ populate: true }).then((win) => {
     const tab = win.tabs?.find((t) => t.active);
@@ -184,7 +411,16 @@ function deviceTitle(d) {
   return truncateTitle(id.length > 24 ? `${id.slice(0, 21)}...` : id);
 }
 
-async function refreshMenuForTab(tabId) {
+/** Context menu ids are fixed; overlapping refreshMenuForTab runs caused duplicate-id errors. */
+let contextMenuRefreshChain = Promise.resolve();
+
+function refreshMenuForTab(tabId) {
+  contextMenuRefreshChain = contextMenuRefreshChain
+    .then(() => runRefreshMenuForTab(tabId))
+    .catch(() => {});
+}
+
+async function runRefreshMenuForTab(tabId) {
   let tab;
   try {
     tab = await chrome.tabs.get(tabId);
