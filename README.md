@@ -11,18 +11,19 @@
 
 macOS + browsers don’t let you easily control audio **per tab**.
 
-This fixes that — right from the **right-click menu**.
+This fixes that — right from the **toolbar popup UI**.
 
 ---
 
 ## How it works
 
-![Right-click menu to choose audio output](docs/images/Screenshot.jpg)
+![Extension popup to choose tab output](docs/images/Screenshot.jpg)
 
-- *Requires Audio permission*
-- Right-click any page or video  
-- Choose **Sound Output → Select device**  
-- Done — that tab now plays through a different output
+- Click the extension button in the browser toolbar
+- See tabs that are currently producing audio
+- Choose an output device for each tab
+- Set volume per tab with a simple slider
+- (Optional) Set macOS system output volume from the popup
 
 ---
 
@@ -30,7 +31,7 @@ This fixes that — right from the **right-click menu**.
 
 - 🎧 Zoom in headphones, music on speakers  
 - 📺 Send a tab to your TV while working on laptop audio  
-- 🔀 Run multiple tabs with different outputs
+- 🔀 Run multiple tabs with different outputs and volume levels
 
 ---
 
@@ -40,6 +41,24 @@ This fixes that — right from the **right-click menu**.
 2. Go to `chrome://extensions`  
 3. Enable **Developer Mode**  
 4. Click **Load unpacked** → select this folder  
+
+---
+
+## Optional: enable system volume control (macOS)
+
+The popup can control macOS output volume using a native helper.
+
+1. Find your extension ID in `chrome://extensions`  
+2. Run:
+
+```bash
+chmod +x ./native-host/install-mac.sh
+./native-host/install-mac.sh <YOUR_EXTENSION_ID>
+```
+
+3. Reload the extension
+
+After setup, the popup shows **System output volume** at the top.
 
 ---
 

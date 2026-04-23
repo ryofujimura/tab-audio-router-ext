@@ -1,0 +1,9 @@
+{
+  "name": "com.tab_audio_router.host",
+  "description": "Tab Audio Router native host for macOS system volume",
+  "path": "/ABSOLUTE/PATH/TO/tab-audio-router-ext/native-host/host.js",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://__EXTENSION_ID__/"
+  ]
+}
