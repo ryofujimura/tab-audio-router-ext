@@ -195,6 +195,16 @@ async function applyAudioForTab(tabId, deviceId, volume) {
       const outputs = (await navigator.mediaDevices.enumerateDevices()).filter(
         (d) => d.kind === 'audiooutput'
       );
+      const deviceSummary = outputs.map((d) => ({
+        deviceId: d.deviceId,
+        label: d.label || '',
+        groupId: d.groupId || '',
+      }));
+      console.log('[TabAudioRouter] setSinkId request', {
+        requestedSinkId: sinkId,
+        devices: deviceSummary,
+      });
+
       const sinkExists =
         sinkId === 'default' || outputs.some((d) => d.deviceId === sinkId);
       if (!sinkExists) {
@@ -202,6 +212,8 @@ async function applyAudioForTab(tabId, deviceId, volume) {
           ok: false,
           updatedCount: 0,
           error: 'Requested device not found for this tab',
+          devices: deviceSummary,
+          requestedSinkId: sinkId,
         };
       }
 
@@ -211,38 +223,71 @@ async function applyAudioForTab(tabId, deviceId, volume) {
           ok: false,
           updatedCount: 0,
           error: 'No media elements found in this tab',
+          devices: deviceSummary,
+          requestedSinkId: sinkId,
         };
       }
 
       let updatedCount = 0;
       /** @type {string[]} */
       const errors = [];
+      /** @type {Array<{tag: string, sinkIdBefore: string, sinkIdAfter: string}>} */
+      const mediaReport = [];
       for (const el of media) {
         try {
+          const before = el.sinkId ?? '';
           if (typeof el.setSinkId === 'function') {
             await el.setSinkId(sinkId);
           }
           el.volume = vol;
           updatedCount += 1;
+          mediaReport.push({
+            tag: el.tagName,
+            sinkIdBefore: before,
+            sinkIdAfter: el.sinkId ?? '',
+          });
         } catch (e) {
           errors.push(e instanceof Error ? e.message : String(e));
         }
       }
+      console.log('[TabAudioRouter] setSinkId applied', {
+        requestedSinkId: sinkId,
+        mediaReport,
+        errors,
+      });
 
       return {
         ok: errors.length === 0,
         updatedCount,
         error: errors[0] || null,
+        devices: deviceSummary,
+        requestedSinkId: sinkId,
+        mediaReport,
       };
     },
     args: [deviceId, normalizedVolume],
   });
 
-  return res?.result ?? {
-    ok: false,
-    updatedCount: 0,
-    error: 'No result from tab script',
-  };
+  const result = res?.result;
+  if (result) {
+    console.log('[Tab Audio Router] applyAudioForTab', {
+      tabId,
+      requestedSinkId: deviceId,
+      ok: result.ok,
+      updatedCount: result.updatedCount,
+      error: result.error,
+      devices: result.devices,
+      mediaReport: result.mediaReport,
+    });
+  }
+
+  return (
+    result ?? {
+      ok: false,
+      updatedCount: 0,
+      error: 'No result from tab script',
+    }
+  );
 }
 
 async function handlePopupGetState() {
