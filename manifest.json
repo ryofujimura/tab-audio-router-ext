@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Tab Audio Router",
-  "version": "0.2.1",
-  "description": "Choose audio output per video/audio from the right-click menu (setSinkId).",
-  "permissions": ["contextMenus", "scripting", "tabs", "alarms"],
+  "version": "0.6.0",
+  "description": "Route tab audio to specific output devices with per-tab volume control.",
+  "permissions": ["contextMenus", "scripting", "tabs", "nativeMessaging"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Tab Audio Router",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

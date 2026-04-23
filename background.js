@@ -1,18 +1,21 @@
 /**
  * Tab Audio Router — list audiooutput devices under a context submenu and apply the
  * choice with HTMLMediaElement.setSinkId() on the element that was right-clicked.
- * Before listing or setting outputs, the tab runs getUserMedia({ audio: true }) (then
- * stops tracks) so deviceIds match the fully resolved list; on macOS this keeps the
- * built-in output distinct from 3.5mm when the OS default is the jack.
  *
- * Chromium limitation: contextMenus has no onShown hook, so the menu is rebuilt on a
- * timer / focus / contextmenu ping; the first right-click after a change may still show
- * the previous list until the next open. See refresh triggers below.
+ * Mic policy: we intentionally never call getUserMedia() here. On macOS, opening any
+ * mic stream demotes a Bluetooth headset from A2DP (stereo) to HFP (phone-call mode,
+ * bad quality). setSinkId() does not need a mic stream to work; enumerateDevices()
+ * still returns deviceIds and returns labels for origins that have been granted mic
+ * permission separately.
+ *
+ * Refresh policy: contextMenus has no onShown hook, so we rebuild the menu only on
+ * explicit user actions — a right-click ping from content.js and popup open. We do
+ * NOT refresh on alarms, tab switches, or window focus changes, because each refresh
+ * previously opened a mic stream and forced HFP every time the user switched apps.
  */
 
 const PARENT_ID = 'tab-audio-outputs-parent';
 const MAX_OUTPUT_ITEMS = 64;
-const ALARM_NAME = 'refresh-audio-devices';
 const DEFAULT_VOLUME = 1;
 const NATIVE_HOST_NAME = 'com.tab_audio_router.host';
 
@@ -22,30 +25,11 @@ const deviceIdByMenuId = new Map();
 const tabAudioPrefs = new Map();
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
-  scheduleRefreshActiveTab();
+  void rebuildMenuError('Right-click a video or audio element to populate');
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  scheduleRefreshActiveTab();
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM_NAME) {
-    scheduleRefreshActiveTab();
-  }
-});
-
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  refreshMenuForTab(activeInfo.tabId);
-});
-
-chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
-  chrome.tabs.query({ active: true, windowId }).then((tabs) => {
-    const id = tabs[0]?.id;
-    if (id != null) refreshMenuForTab(id);
-  });
+  void rebuildMenuError('Right-click a video or audio element to populate');
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -128,16 +112,6 @@ async function applySinkIdToContextMenuTarget(tabId, info, deviceId) {
           };
         }
         try {
-          // Prime permission so output deviceId matches a fully resolved list; required
-          // to distinguish built-in output vs 3.5mm default on macOS.
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              audio: true,
-            });
-            stream.getTracks().forEach((t) => t.stop());
-          } catch {
-            /* denied or blocked — still try setSinkId */
-          }
           await el.setSinkId(sinkId);
           return { ok: true };
         } catch (e) {
@@ -180,16 +154,6 @@ async function applyAudioForTab(tabId, deviceId, volume) {
           updatedCount: 0,
           error: 'Device enumeration is not available on this page',
         };
-      }
-
-      // Match enumerateDevices to the same resolution Chrome uses for setSinkId, so
-      // explicit output ids (e.g. built-in speakers) are not confused with the system
-      // default when 3.5mm headphones are the OS default.
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((t) => t.stop());
-      } catch {
-        /* still try enumerate + setSinkId */
       }
 
       const outputs = (await navigator.mediaDevices.enumerateDevices()).filter(
@@ -326,12 +290,6 @@ async function getAudioOutputsForTab(tabId) {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach((t) => t.stop());
-        } catch {
-          /* unlabeled or partial list if denied */
-        }
         const list = await navigator.mediaDevices.enumerateDevices();
         return list
           .filter((d) => d.kind === 'audiooutput')
@@ -414,13 +372,6 @@ function callNativeHost(payload) {
   });
 }
 
-function scheduleRefreshActiveTab() {
-  chrome.windows.getLastFocused({ populate: true }).then((win) => {
-    const tab = win.tabs?.find((t) => t.active);
-    if (tab?.id != null) refreshMenuForTab(tab.id);
-  }).catch(() => {});
-}
-
 /**
  * @param {string} url
  */
@@ -481,12 +432,6 @@ async function runRefreshMenuForTab(tabId) {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId },
       func: async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach((t) => t.stop());
-        } catch {
-          /* unlabeled or partial list if denied */
-        }
         const list = await navigator.mediaDevices.enumerateDevices();
         return list
           .filter((d) => d.kind === 'audiooutput')
